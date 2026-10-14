@@ -1,0 +1,64 @@
+# Bygger Blink Buddy automatisk til Windows (exe) og Mac (app) på GitHubs maskiner.
+# Læg mappen i et GitHub-repositorium. Hvert push til main bygger begge
+# (hentes under Actions → Artifacts). Et tag som v1.0.0 laver desuden en
+# Release med filerne, som dryeye.dk kan linke direkte til:
+#   https://github.com/<bruger>/<repo>/releases/latest/download/Blink-Buddy.exe
+#   https://github.com/<bruger>/<repo>/releases/latest/download/Blink-Buddy-mac.zip
+name: Byg Windows og Mac
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - run: python -c "import os,sys; os.environ['QT_QPA_PLATFORM']='offscreen'; from PySide6.QtWidgets import QApplication; a=QApplication(sys.argv); import blink_buddy as b; b.generate_icon('blink_buddy.ico')"
+      - run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Blink Buddy" --icon blink_buddy.ico --add-data "blink_buddy.ico;." --add-data "frames;frames" blink_buddy.py
+      - run: Copy-Item "dist/Blink Buddy.exe" "dist/Blink-Buddy.exe"
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Blink-Buddy-Windows
+          path: dist/Blink-Buddy.exe
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - run: QT_QPA_PLATFORM=offscreen python -c "import sys; from PySide6.QtWidgets import QApplication; a=QApplication(sys.argv); import blink_buddy as b; b.generate_icon('blink_buddy.ico'); b.generate_icns('blink_buddy.icns')"
+      - run: python -m PyInstaller --noconfirm --clean --windowed --name "Blink Buddy" --icon blink_buddy.icns --osx-bundle-identifier dk.dryeye.blinkbuddy --add-data "blink_buddy.ico:." --add-data "frames:frames" blink_buddy.py
+      - run: plutil -replace LSUIElement -bool true "dist/Blink Buddy.app/Contents/Info.plist"
+      - run: ditto -c -k --keepParent "dist/Blink Buddy.app" "dist/Blink-Buddy-mac.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Blink-Buddy-Mac
+          path: dist/Blink-Buddy-mac.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/Blink-Buddy-Windows/Blink-Buddy.exe
+            out/Blink-Buddy-Mac/Blink-Buddy-mac.zip
+          name: Blink Buddy ${{ github.ref_name }}
+          body: "Blink Buddy til Windows og Mac. Programmerne er ikke kodesigneret: på Windows vælges 'Flere oplysninger' og 'Kør alligevel'; på Mac højreklikkes på appen og vælges 'Åbn' første gang."
