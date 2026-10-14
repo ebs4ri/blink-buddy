@@ -1,0 +1,6 @@
+__pycache__/
+build/
+dist/
+*.spec
+blink_buddy.ico
+blink_buddy.icns
